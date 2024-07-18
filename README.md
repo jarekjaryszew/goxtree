@@ -1,6 +1,6 @@
 # goXtree
 
-GoXtree is currently just a proof of concept library to deliver a convenient way to build WASM based web apps in Go.
+GoXtree is currently just a proof of concept library to deliver a convenient way to build WASM based webapps in Go.
 
 You will find usage examples here: https://github.com/jarekjaryszew/goxtree_examples . As I am not tagging this yet you need to clone example repo aside this one.
 ```
@@ -10,9 +10,9 @@ your_dir
 ```
 
 Please mind that this is just a concept:
-- It was tested only with existing example.
-- It may not provide proper resource cleanup.
-- It uses syscall/js to integrate with JS API which unfortunately is not easy to work with. Most mistakes result in a panic killing entire webassembly app so making it stable seem like a greatest challenge.
+- It was tested only with the existing example.
+- It does not provide proper resource cleanup.
+- It uses syscall/js to integrate with JS API which unfortunately is not easy to work with. Most mistakes result in a panic killing entire webassembly app so making it stable seems like a greatest challenge.
 
 ## Concept
 
@@ -21,7 +21,7 @@ As many SPA frameworks goXtree keeps its own representation of DOM tree and apli
 
 
 ### Declarative description of HTML elements
-Each subtree is represented in a declarative format like, with html attributes as structure tags:
+Each subtree is represented in a declarative format with html attributes as structure tags:
 ```go
 type MyRoot struct {
 	me any `tag:"div" id:"myroot"`
@@ -33,12 +33,12 @@ type MyRoot struct {
 	} `tag:"div" id:"innerDiv"`
 }
 ```
-Process of converting the template structure to virtual DOM is called dressing (like dressing a christmas tree). Dressed subtree may be then mounted.
+Process of converting the template structure to virtual DOM is called dressing (like dressing a christmas tree). Dressed subtree may then be mounted.
 ```go
 rootNode, _ := goxtree.DressDomTree(&MyRoot{})
 rootNode.MountToTag("root")
 ```
-Above code is enough to display an html document.
+Above code is enough to display a html document.
 ### Subtrees
 GoXtree operates on smaller subtries which internally have immutable structure (but you can manipulate attributes and content) that are accessed via CoreNode. Subtrees may attach to arbitrary existing DOM node as long as it has an id field like: `<body id="root"></body>` or another subtree.
 ```go
@@ -48,7 +48,7 @@ type MyButton struct {
 // ...
 rootNode.AddChildToElementWithId("secondDiv", buttonNode)
 ```
-Event listener functions are added to dom and registered with JS when subtree is mounted.
+Event listener functions are added to DOM and registered with JS when subtree is mounted.
 ```go
 	cb2 := func() {
         // Goroutine is used not to block js event loop.
