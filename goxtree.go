@@ -24,7 +24,8 @@ type CoreNode struct {
 	ElementsWithId      map[string]*domNode
 	EventListeners      map[EventListenerKey]EventListenerVal
 	RegisteredListeners map[*js.Func]bool
-	ForeignChildren     map[*CoreNode]bool
+	ForeignChildren     map[string]*CoreNode
+	Postfix             string
 }
 
 type EventListenerKey struct {
@@ -53,21 +54,45 @@ func (cn *CoreNode) AddEventListenerToElementWithId(id string, event string, cb 
 
 func (cn *CoreNode) registerEventListeners() {
 	for id, listener := range cn.EventListeners {
-		// fmt.Println("registering event listener", id.Event, "to element with id", id)
 		js.Global().Get("document").Call("getElementById", id.Id).Call("addEventListener", id.Event, *listener.JsFunc)
 		cn.RegisteredListeners[listener.JsFunc] = true
 	}
 }
 
+func (cn *CoreNode) deregisterEventListeners() {
+	for listener, _ := range cn.RegisteredListeners {
+		listener.Release()
+	}
+	cn.RegisteredListeners = make(map[*js.Func]bool)
+}
+
+func (cn *CoreNode) ReadValueFromElementWithId(id string) string {
+	return js.Global().Get("document").Call("getElementById", id).Get("value").String()
+}
+
 func (cn *CoreNode) AddChildToElementWithId(id string, dn *CoreNode) {
 	cn.ElementsWithId[id].ForeignChildren = append(cn.ElementsWithId[id].ForeignChildren, dn)
-	cn.ForeignChildren[dn] = true
+	cn.ForeignChildren[dn.Id] = dn
 	dn.hostId = id
 }
 
 func (cn *CoreNode) ClearChildrenFromElementWithId(id string) {
+	for _, c := range cn.ElementsWithId[id].ForeignChildren {
+		c.deregisterEventListeners()
+		delete(cn.ForeignChildren, c.Id)
+	}
 	cn.ElementsWithId[id].ForeignChildren = []*CoreNode{}
-	cn.ForeignChildren = make(map[*CoreNode]bool)
+}
+
+func (cn *CoreNode) RemoveChildFromElementWithId(id string, childId string) {
+	for i, c := range cn.ElementsWithId[id].ForeignChildren {
+		if c.Id == childId {
+			c.deregisterEventListeners()
+			cn.ElementsWithId[id].ForeignChildren = append(cn.ElementsWithId[id].ForeignChildren[:i], cn.ElementsWithId[id].ForeignChildren[i+1:]...)
+			delete(cn.ForeignChildren, childId)
+			return
+		}
+	}
 }
 
 func (cn *CoreNode) SetAttributeToElementWithId(id string, attr string, val string) {
@@ -93,8 +118,9 @@ func (cn *CoreNode) MountToNode(id string) {
 
 func (cn *CoreNode) Render() {
 	js.Global().Get("document").Call("getElementById", cn.hostId).Set("innerHTML", cn.ToHtml())
+	cn.deregisterEventListeners()
 	cn.registerEventListeners()
-	for c, _ := range cn.ForeignChildren {
+	for _, c := range cn.ForeignChildren {
 		c.registerEventListeners()
 	}
 }
@@ -102,22 +128,28 @@ func (cn *CoreNode) Render() {
 func (cn *CoreNode) RenderFromElementWithId(id string) {
 	el := cn.ElementsWithId[id]
 	js.Global().Get("document").Call("getElementById", id).Set("outerHTML", el.ToHtml())
-	for c, _ := range cn.ForeignChildren {
+	for _, c := range cn.ForeignChildren {
 		c.registerEventListeners()
 	}
 }
 
-func extractAttributes(descriptor reflect.StructField) map[string]string {
+func extractAttributes(descriptor reflect.StructField, postfix string) map[string]string {
 	attributes := make(map[string]string)
 	for _, v := range supportedAttrs {
 		if attr, ok := descriptor.Tag.Lookup(v); ok {
+			if v == "id" {
+				attr = attr + postfix
+			}
 			attributes[v] = attr
 		}
 	}
 	return attributes
 }
 
-func DressDomTree[T any](descriptor *T) (*CoreNode, error) {
+// Creates a CoreNode from a template struct
+// Second argument is a postifx for the id of all the nodes.
+// It is useful when you want to create multiple instances of the same template like list items
+func DressDomTree[T any](descriptor *T, idPostfix string) (*CoreNode, error) {
 	cn := &CoreNode{}
 	descriptorType := reflect.TypeOf(*descriptor)
 	me, ok := descriptorType.FieldByName("me")
@@ -125,14 +157,15 @@ func DressDomTree[T any](descriptor *T) (*CoreNode, error) {
 		fmt.Println("no 'me' field in the root of the struct")
 		return nil, fmt.Errorf("no 'me' field in the root of the struct")
 	}
-	cn.Id = me.Tag.Get("id")
+	cn.Postfix = idPostfix
+	cn.Id = me.Tag.Get("id") + idPostfix
 	cn.Tag = me.Tag.Get("tag")
 	cn.Text = me.Tag.Get("text")
-	cn.Atrrs = extractAttributes(me)
+	cn.Atrrs = extractAttributes(me, cn.Postfix)
 	cn.EventListeners = make(map[EventListenerKey]EventListenerVal)
 	cn.ElementsWithId = make(map[string]*domNode)
 	cn.RegisteredListeners = make(map[*js.Func]bool)
-	cn.ForeignChildren = make(map[*CoreNode]bool)
+	cn.ForeignChildren = make(map[string]*CoreNode)
 	cn.ElementsWithId[cn.Id] = &cn.domNode
 	for i := 0; i < descriptorType.NumField(); i++ {
 		field := descriptorType.Field(i)
@@ -155,7 +188,7 @@ func (dn *domNode) dressNode(field reflect.StructField) error {
 	}
 	dn.Tag = field.Tag.Get("tag")
 	dn.Text = field.Tag.Get("text")
-	dn.Atrrs = extractAttributes(field)
+	dn.Atrrs = extractAttributes(field, dn.Owner.Postfix)
 
 	if field.Type.Kind() != reflect.Struct {
 		return nil
