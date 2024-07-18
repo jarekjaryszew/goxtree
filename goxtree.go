@@ -27,6 +27,16 @@ type CoreNode struct {
 	ForeignChildren     map[*CoreNode]bool
 }
 
+type EventListenerKey struct {
+	Id    string
+	Event string
+}
+
+type EventListenerVal struct {
+	Callback func()
+	JsFunc   *js.Func
+}
+
 func eventListenerWrapper(cb func()) *js.Func {
 	jsFunc := js.FuncOf(func(this js.Value, args []js.Value) interface{} {
 		cb()
@@ -60,18 +70,20 @@ func (cn *CoreNode) ClearChildrenFromElementWithId(id string) {
 	cn.ForeignChildren = make(map[*CoreNode]bool)
 }
 
-type EventListenerKey struct {
-	Id    string
-	Event string
+func (cn *CoreNode) SetAttributeToElementWithId(id string, attr string, val string) {
+	cn.ElementsWithId[id].Atrrs[attr] = val
 }
 
-type EventListenerVal struct {
-	Callback func()
-	JsFunc   *js.Func
+func (cn *CoreNode) GetAttributeFromElementWithId(id string, attr string) string {
+	return cn.ElementsWithId[id].Atrrs[attr]
 }
 
 func (cn *CoreNode) SetTextToElementWithId(id string, text string) {
 	cn.ElementsWithId[id].Text = text
+}
+
+func (cn *CoreNode) GetTextFromElementWithId(id string) string {
+	return cn.ElementsWithId[id].Text
 }
 
 func (cn *CoreNode) MountToNode(id string) {
@@ -82,6 +94,14 @@ func (cn *CoreNode) MountToNode(id string) {
 func (cn *CoreNode) Render() {
 	js.Global().Get("document").Call("getElementById", cn.hostId).Set("innerHTML", cn.ToHtml())
 	cn.registerEventListeners()
+	for c, _ := range cn.ForeignChildren {
+		c.registerEventListeners()
+	}
+}
+
+func (cn *CoreNode) RenderFromElementWithId(id string) {
+	el := cn.ElementsWithId[id]
+	js.Global().Get("document").Call("getElementById", id).Set("outerHTML", el.ToHtml())
 	for c, _ := range cn.ForeignChildren {
 		c.registerEventListeners()
 	}

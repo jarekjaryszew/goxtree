@@ -10,6 +10,7 @@ your_dir
 ```
 
 Please mind that this is just a concept:
+- Code is a bit messy, lacks a proper error handling yet
 - It was tested only with the existing example.
 - It does not provide proper resource cleanup.
 - It uses syscall/js to integrate with JS API which unfortunately is not easy to work with. Most mistakes result in a panic killing entire webassembly app so making it stable seems like a greatest challenge.
