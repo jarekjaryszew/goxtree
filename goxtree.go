@@ -8,11 +8,6 @@ import (
 
 var supportedAttrs = []string{"class", "id", "href", "style"}
 
-type CallBackKey struct {
-	Id    string
-	Event string
-}
-
 type domNode struct {
 	Tag             string
 	Text            string
@@ -27,9 +22,31 @@ type CoreNode struct {
 	domNode
 	hostId              string
 	ElementsWithId      map[string]*domNode
-	EventListeners      map[CallBackKey]*js.Func
+	EventListeners      map[EventListenerKey]EventListenerVal
 	RegisteredListeners map[*js.Func]bool
 	ForeignChildren     map[*CoreNode]bool
+}
+
+func eventListenerWrapper(cb func()) *js.Func {
+	jsFunc := js.FuncOf(func(this js.Value, args []js.Value) interface{} {
+		cb()
+		return nil
+	})
+	return &jsFunc
+}
+
+func (cn *CoreNode) AddEventListenerToElementWithId(id string, event string, cb func()) {
+
+	// fmt.Println("adding event listener", event, "to element with id", id)
+	cn.EventListeners[EventListenerKey{Id: id, Event: event}] = EventListenerVal{Callback: cb, JsFunc: eventListenerWrapper(cb)}
+}
+
+func (cn *CoreNode) registerEventListeners() {
+	for id, listener := range cn.EventListeners {
+		// fmt.Println("registering event listener", id.Event, "to element with id", id)
+		js.Global().Get("document").Call("getElementById", id.Id).Call("addEventListener", id.Event, *listener.JsFunc)
+		cn.RegisteredListeners[listener.JsFunc] = true
+	}
 }
 
 func (cn *CoreNode) AddChildToElementWithId(id string, dn *CoreNode) {
@@ -43,24 +60,21 @@ func (cn *CoreNode) ClearChildrenFromElementWithId(id string) {
 	cn.ForeignChildren = make(map[*CoreNode]bool)
 }
 
-func (cn *CoreNode) AddEventListenerToElementWithId(id string, event string, cb *js.Func) {
-	// fmt.Println("adding event listener", event, "to element with id", id)
-	cn.EventListeners[CallBackKey{Id: id, Event: event}] = cb
+type EventListenerKey struct {
+	Id    string
+	Event string
+}
+
+type EventListenerVal struct {
+	Callback func()
+	JsFunc   *js.Func
 }
 
 func (cn *CoreNode) SetTextToElementWithId(id string, text string) {
 	cn.ElementsWithId[id].Text = text
 }
 
-func (cn *CoreNode) registerEventListeners() {
-	for id, listener := range cn.EventListeners {
-		// fmt.Println("registering event listener", id.Event, "to element with id", id)
-		js.Global().Get("document").Call("getElementById", id.Id).Call("addEventListener", id.Event, *listener)
-		cn.RegisteredListeners[listener] = true
-	}
-}
-
-func (cn *CoreNode) MountToTag(id string) {
+func (cn *CoreNode) MountToNode(id string) {
 	cn.hostId = id
 	cn.Render()
 }
@@ -95,7 +109,7 @@ func DressDomTree[T any](descriptor *T) (*CoreNode, error) {
 	cn.Tag = me.Tag.Get("tag")
 	cn.Text = me.Tag.Get("text")
 	cn.Atrrs = extractAttributes(me)
-	cn.EventListeners = make(map[CallBackKey]*js.Func)
+	cn.EventListeners = make(map[EventListenerKey]EventListenerVal)
 	cn.ElementsWithId = make(map[string]*domNode)
 	cn.RegisteredListeners = make(map[*js.Func]bool)
 	cn.ForeignChildren = make(map[*CoreNode]bool)
